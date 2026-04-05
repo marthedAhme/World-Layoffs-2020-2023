@@ -7,14 +7,18 @@ This project analyzes global layoff events (2020–2023) across 51 countries and
 ## 📁 Project Structure
 
 ```
-world-layoffs/
-├── data/
+├── dataset/
 │   └── layoffs.csv                  # Raw dataset
-├── sql/
-│   ├── 01_data_cleaning.sql         # Full cleaning script
-│   └── 02_data_exploration.sql      # Full EDA script
+├── script/
+│   └── data_load.sql     # Full loading script
+│   ├── data_cleaning.sql         # Full cleaning script
+│   └── data_exploration.sql     # Full EDA script
+│   └── data_analysis.sql     # Full Analysis script
 ├── dashboard/
 │   └── layoffs_dashboard.pbix       # Power BI dashboard
+└── docu
+│   └── cataloy.md       # Description whole project
+│   └── Interpretaion.md       # Interprete the results
 └── README.md
 ```
 
@@ -126,7 +130,7 @@ USE world_layoff;
 
 **2. Load the raw data:**
 ```sql
--- script/load_raw_data.sql
+-- script/data_load.sql
 -- Option 1: Using SSMS Import Wizard
 -- Right-click database → Tasks → Import Flat File → select dataset/layoffs.csv
 
@@ -734,7 +738,7 @@ WHERE total_laid_off        IS NOT NULL
 ```
 **5. Data analysis:**
 ```
-
+-- script/data_analysis.sql
 ```
 **6. Open the dashboard:**
 ```
