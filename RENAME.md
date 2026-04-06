@@ -319,8 +319,6 @@ EXEC clean_date
 
 **4. Run the exploration script:**
 ```sql
--- Execute script/data_exploration.sql
--- Output: EDA results across 9 sections
 -- ============================================================
 --  World Layoffs 2020–2023 — Exploratory Data Analysis (EDA)
 --  Database : world_layoff
@@ -330,14 +328,14 @@ EXEC clean_date
 USE world_layoff;
 
 -- ============================================================
--- SECTION 0 — Dataset Overview
+-- SECTION 1 — Dataset Overview
 -- ============================================================
 
 /*
   Dataset : World Layoffs 2020–2023
   Rows    : 2,361 (raw) | varies after cleaning
   Columns : 9
-  Scope   : Global tech-sector layoff events
+  Scope   : Global all-sector layoff events
   Source  : layoff_staging1 (cleaned from layoff)
 
   Columns:
@@ -354,7 +352,7 @@ USE world_layoff;
 
 
 -- ============================================================
--- SECTION 1 — Row Counts
+-- SECTION 2 — Row Counts
 -- ============================================================
 
 -- Raw rows before cleaning
@@ -365,9 +363,36 @@ FROM   layoff;
 SELECT COUNT(*) AS num_clean_rows
 FROM   layoff_staging1;
 
+-- ============================================================
+-- SECTION 3 — Data Quality (Universal Null Checker)
+-- ============================================================
+
+-- Dynamically checks every column for NULL percentage
+-- Works on any table — just change @table
+DECLARE @sql   NVARCHAR(MAX) = '';
+DECLARE @table NVARCHAR(128) = 'layoff_staging1';
+
+SELECT @sql += '
+    SELECT
+        ''' + COLUMN_NAME + '''                                AS [column],
+        FORMAT(COUNT(*), ''N0'')                               AS total_rows,
+        FORMAT(COUNT(*) - COUNT([' + COLUMN_NAME + ']),''N0'') AS null_count,
+        FORMAT(
+            (COUNT(*) - COUNT([' + COLUMN_NAME + ']))
+            * 100.0 / COUNT(*), ''N1'') + ''%''                AS null_percentage
+    FROM ' + @table + ' UNION ALL'
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = @table;
+
+-- Remove trailing UNION ALL and wrap in ORDER BY
+SET @sql = LEFT(@sql, LEN(@sql) - 9);
+SET @sql = 'SELECT * FROM (' + @sql + ') t ORDER BY null_count DESC';
+
+EXEC sp_executesql @sql;
+
 
 -- ============================================================
--- SECTION 2 — Data Duration
+-- SECTION 4 — Data Duration
 -- ============================================================
 
 -- Years covered, with first and last event per year
@@ -382,86 +407,62 @@ GROUP BY YEAR([date])
 ORDER BY [year];
 
 
--- ============================================================
--- SECTION 3 — Data Quality (Universal Null Checker)
--- ============================================================
-
--- Dynamically checks every column for NULL percentage
--- Works on any table — just change @table
-DECLARE @sql   NVARCHAR(MAX) = '';
-DECLARE @table NVARCHAR(128) = 'layoff_staging1';
-
-SELECT @sql += '
-    SELECT
-        ''' + COLUMN_NAME + '''                              AS [column],
-        COUNT(*)                                             AS total_rows,
-        COUNT(*) - COUNT([' + COLUMN_NAME + '])              AS null_count,
-        CONCAT((COUNT(*) - COUNT([' + COLUMN_NAME + ']))
-               * 100 / COUNT(*), ''%'')                      AS null_percentage
-    FROM ' + @table + ' UNION ALL'
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_NAME = @table;
-
--- Remove trailing UNION ALL and wrap in ORDER BY
-SET @sql = LEFT(@sql, LEN(@sql) - 9);
-SET @sql = 'SELECT * FROM (' + @sql + ') t ORDER BY null_count DESC';
-
-EXEC sp_executesql @sql;
-
 
 -- ============================================================
 -- SECTION 4 — KPI Summary
 -- ============================================================
 
 -- Part A: High-level metrics
-SELECT 'Number of Companies'  AS measure_name, FORMAT(COUNT(DISTINCT company),  'N0') AS measure_value FROM layoff_staging1
+
+SELECT 'Number of Companies'  AS measure_name, COUNT(DISTINCT company)        AS measure_value FROM layoff_staging1
 UNION ALL
-SELECT 'Number of Industries' AS measure_name, FORMAT(COUNT(DISTINCT industry), 'N0') AS measure_value FROM layoff_staging1
+SELECT 'Number of Industries' AS measure_name, COUNT(DISTINCT industry)       AS measure_value FROM layoff_staging1
 UNION ALL
-SELECT 'Number of Countries'  AS measure_name, FORMAT(COUNT(DISTINCT country),  'N0') AS measure_value FROM layoff_staging1
+SELECT 'Number of Countries'  AS measure_name, COUNT(DISTINCT country)        AS measure_value FROM layoff_staging1
 UNION ALL
-SELECT 'Total Layoffs'        AS measure_name, FORMAT(SUM(total_laid_off),       'N0') AS measure_value FROM layoff_staging1 WHERE total_laid_off        IS NOT NULL
+SELECT 'Total Layoffs'        AS measure_name, SUM(total_laid_off)            AS measure_value FROM layoff_staging1 WHERE total_laid_off  IS NOT NULL
 UNION ALL
-SELECT 'Average Layoffs'      AS measure_name, FORMAT(AVG(total_laid_off),       'N0') AS measure_value FROM layoff_staging1 WHERE total_laid_off        IS NOT NULL
+SELECT 'Average Layoffs'      AS measure_name, AVG(total_laid_off)            AS measure_value FROM layoff_staging1 WHERE total_laid_off  IS NOT NULL
 UNION ALL
-SELECT 'Total Funds Raised'   AS measure_name, FORMAT(SUM(funds_raised_millions),'N0') AS measure_value FROM layoff_staging1 WHERE funds_raised_millions IS NOT NULL
+SELECT 'Total Funds Raised'   AS measure_name, ROUND(SUM(funds_raised_millions),2)     AS measure_value FROM layoff_staging1 WHERE funds_raised_millions IS NOT NULL
 UNION ALL
-SELECT 'Average Funds Raised' AS measure_name,
-       CONCAT(CAST(ROUND(AVG(funds_raised_millions), 0) AS NVARCHAR), 'M')              AS measure_value FROM layoff_staging1 WHERE funds_raised_millions IS NOT NULL
+SELECT 'Average Funds Raised' AS measure_name, ROUND(AVG(funds_raised_millions),2)     AS measure_value FROM layoff_staging1 WHERE funds_raised_millions IS NOT NULL
 UNION ALL
-SELECT 'Average Layoff Rate'  AS measure_name,
-       CAST(ROUND(CAST(AVG(percentage_laid_off) AS FLOAT) * 100, 2) AS NVARCHAR) + '%' AS measure_value
-FROM   layoff_staging1
-WHERE  percentage_laid_off IS NOT NULL
-  AND  percentage_laid_off > 0;
+SELECT 'Average Layoff Rate'  AS measure_name, ROUND(AVG(percentage_laid_off),2) AS measure_value FROM layoff_staging1 WHERE  percentage_laid_off  IS NOT NULL AND  percentage_laid_off >  0;
 
 
 -- Part B: Estimated total workforce and overall layoff rate
--- Logic: estimated_employees = total_laid_off / percentage_laid_off
---        overall_rate        = total_laid_off / estimated_employees * 100
+
 WITH num_of_employees AS (
     SELECT
         total_laid_off,
         percentage_laid_off,
-        CAST(ROUND(total_laid_off / NULLIF(percentage_laid_off, 0), 0) AS FLOAT) AS estimated_total_employees
+        CAST(ROUND(
+            total_laid_off / NULLIF(percentage_laid_off, 0)
+        , 0) AS FLOAT)                                       AS estimated_total_employees
     FROM layoff_staging1
     WHERE total_laid_off      IS NOT NULL
       AND percentage_laid_off IS NOT NULL
-      AND percentage_laid_off > 0
+      AND percentage_laid_off >  0
 )
 SELECT
-    FORMAT(CAST(SUM(estimated_total_employees) AS BIGINT), 'N0') AS estimated_total_employees,
-    FORMAT(SUM(total_laid_off), 'N0')                            AS total_laid_off,
-    CONCAT(ROUND(SUM(total_laid_off) * 100.0
-           / NULLIF(SUM(estimated_total_employees), 0), 2), '%') AS overall_layoff_rate
+    CAST(
+        SUM(estimated_total_employees)/1000.0 
+    AS BIGINT)                                    AS estimated_total_employees,
+    SUM(total_laid_off)                           AS total_laid_off,
+    ROUND(
+        SUM(total_laid_off) 
+        / NULLIF(SUM(estimated_total_employees), 0)
+    ,2)                                           AS overall_layoff_rate
 FROM num_of_employees;
 
 
 -- ============================================================
--- SECTION 5 — Time Analysis
+-- SECTION 6 — Time Analysis
 -- ============================================================
 
--- Q: Which year was the hardest?
+-- Q1 — Hardest Year
+-- Which year had the most layoffs?
 SELECT
     YEAR([date])        AS [year],
     SUM(total_laid_off) AS total_laid_off,
@@ -470,24 +471,83 @@ SELECT
 FROM   layoff_staging1
 WHERE  [date] IS NOT NULL
 GROUP BY YEAR([date])
-ORDER BY total_laid_off DESC;
+ORDER BY SUM(total_laid_off) DESC;
 
 
--- Q: What is the month-over-month trend? (Rolling Total)
--- rolling_total shows cumulative layoffs from the start of the dataset
-DROP TABLE IF EXISTS #monthly;
+-- Q2 — Year over Year (YoY)
+-- How did layoffs change compared to the previous year?
 
+WITH annual AS (
+    SELECT
+        YEAR([date])            AS [year],
+        COUNT(DISTINCT company) AS num_companies,
+        SUM(total_laid_off)     AS total_laid_off
+    FROM   layoff_staging1
+    WHERE  [date]         IS NOT NULL
+      AND  total_laid_off IS NOT NULL
+    GROUP BY YEAR([date])
+)
 SELECT
-    YEAR([date])              AS yr,
-    MONTH([date])             AS mn,
-    FORMAT([date], 'yyyy-MM') AS yr_month,
-    SUM(total_laid_off)       AS monthly_total
-INTO #monthly
-FROM   layoff_staging1
-WHERE  [date]          IS NOT NULL
-  AND  total_laid_off  IS NOT NULL
-GROUP BY YEAR([date]), MONTH([date]), FORMAT([date], 'yyyy-MM');
+    [year],
+    num_companies,
+    total_laid_off,
 
+    total_laid_off - LAG(total_laid_off) OVER (ORDER BY [year])
+                    AS yoy_change,
+    CAST(
+         (total_laid_off - LAG(total_laid_off) OVER (ORDER BY [year]))
+          * 1.0
+          / NULLIF(LAG(total_laid_off) OVER (ORDER BY [year]), 0)
+     AS DECIMAL(10,4)) AS yoy_growth_pct
+FROM   annual
+ORDER BY [year];
+
+
+-- Q3 — Month over Month (MoM)
+-- How did layoffs change compared to the previous month?
+
+WITH monthly AS (
+    SELECT
+        YEAR([date])               AS yr,
+        MONTH([date])              AS mn,
+        FORMAT([date], 'yyyy-MM')  AS yr_month,
+        COUNT(DISTINCT company)    AS num_companies,
+        SUM(total_laid_off)        AS monthly_total
+    FROM   layoff_staging1
+    WHERE  [date]         IS NOT NULL
+      AND  total_laid_off IS NOT NULL
+    GROUP BY YEAR([date]), MONTH([date]), FORMAT([date], 'yyyy-MM')
+)
+SELECT
+    yr_month,
+    num_companies,
+    monthly_total,
+    monthly_total - LAG(monthly_total) OVER (ORDER BY yr, mn)
+                     AS mom_change,
+    CAST(
+       (monthly_total - LAG(monthly_total) OVER (ORDER BY yr, mn))
+        *1.0
+       / NULLIF(LAG(monthly_total) OVER (ORDER BY yr, mn), 0)
+
+    AS DECIMAL(10,4)) AS mom_growth_pct
+FROM   monthly
+ORDER BY yr, mn;
+
+
+-- Q4 — Rolling Total
+-- Cumulative layoffs from the start of the dataset to each month
+
+WITH monthly_rolling_total AS (
+    SELECT
+        YEAR([date])              AS yr,
+        MONTH([date])             AS mn,
+        FORMAT([date], 'yyyy-MM') AS yr_month,
+        SUM(total_laid_off)       AS monthly_total
+    FROM   layoff_staging1
+    WHERE  [date]         IS NOT NULL
+      AND  total_laid_off IS NOT NULL
+    GROUP BY YEAR([date]), MONTH([date]), FORMAT([date], 'yyyy-MM')
+)
 SELECT
     yr_month,
     monthly_total,
@@ -495,48 +555,52 @@ SELECT
         ORDER BY yr, mn
         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS rolling_total
-FROM   #monthly
+FROM   monthly_rolling_total
 ORDER BY yr, mn;
 
 
--- Annual share: what percentage of total layoffs happened each year?
-WITH annual_layoff_cte AS (
+-- Q5 — Annual Share
+-- What percentage of total layoffs happened each year?
+WITH annual AS (
     SELECT
-        YEAR([date])                        AS [year],
-        SUM(total_laid_off)                 AS total_laid_off,
-        AVG(total_laid_off)                 AS avg_laid_off,
+        YEAR([date])                         AS [year],
+        SUM(total_laid_off)                  AS total_laid_off,
+        AVG(total_laid_off)                  AS avg_laid_off,
         ROUND(SUM(funds_raised_millions), 2) AS total_funds_raised,
         ROUND(AVG(funds_raised_millions),  2) AS avg_funds_raised
-    FROM layoff_staging1
-    WHERE [date]              IS NOT NULL
-      AND total_laid_off      IS NOT NULL
-      AND funds_raised_millions IS NOT NULL
+    FROM   layoff_staging1
+    WHERE  [date]               IS NOT NULL
+      AND  total_laid_off       IS NOT NULL
+      AND  funds_raised_millions IS NOT NULL
     GROUP BY YEAR([date])
 )
 SELECT
-    *,
-    CONCAT(
-        ROUND(total_laid_off * 100 / SUM(total_laid_off) OVER (), 2)
-    , '%') AS annual_percentage
-FROM   annual_layoff_cte
-ORDER BY total_laid_off DESC;
+    [year],
+    total_laid_off,
+    avg_laid_off,
+    total_funds_raised,
+    avg_funds_raised,
+    total_laid_off * 1.0 / SUM(total_laid_off) OVER ()
+                 AS annual_percentage
+FROM   annual
+ORDER BY annual_percentage DESC;
 
 
 -- ============================================================
--- SECTION 6 — Industry Analysis
+-- SECTION 7 — Industry Analysis
 -- ============================================================
 
 -- Q: Which industry was hit the hardest?
 SELECT
     industry,
-    COUNT(DISTINCT company) AS num_companies,
-    SUM(total_laid_off)     AS total_laid_off,
-    AVG(total_laid_off)     AS avg_laid_off
+    COUNT(DISTINCT company)  AS num_companies,
+    SUM(total_laid_off)      AS total_laid_off,
+    AVG(total_laid_off)      AS avg_laid_off
 FROM   layoff_staging1
-WHERE  industry != 'Unknown'
-  AND  total_laid_off IS NOT NULL
+WHERE  industry        != 'Unknown'
+  AND  total_laid_off  IS NOT NULL
 GROUP BY industry
-ORDER BY total_laid_off DESC;
+ORDER BY SUM(total_laid_off) DESC;
 
 
 -- Q: Which funding stage was most affected?
@@ -551,24 +615,24 @@ WHERE  stage                != 'Unknown'
   AND  total_laid_off        IS NOT NULL
   AND  funds_raised_millions IS NOT NULL
 GROUP BY stage
-ORDER BY total_laid_off DESC;
+ORDER BY SUM(total_laid_off) DESC;
 
 
 -- Q: Which funding stage had the most layoffs per year? (Cohort Analysis)
 SELECT
-    YEAR([date])        AS [year],
+    YEAR([date])          AS [year],
     stage,
-    SUM(total_laid_off) AS total_laid_off
+    SUM(total_laid_off)   AS total_laid_off
 FROM   layoff_staging1
-WHERE  [date] IS NOT NULL
-  AND  stage NOT IN ('Unknown')
-  AND  total_laid_off IS NOT NULL
+WHERE  [date]          IS NOT NULL
+  AND  stage           NOT IN ('Unknown')
+  AND  total_laid_off  IS NOT NULL
 GROUP BY YEAR([date]), stage
-ORDER BY [year], total_laid_off DESC;
+ORDER BY [year], SUM(total_laid_off) DESC;
 
 
 -- ============================================================
--- SECTION 7 — Company Analysis
+-- SECTION 8 — Company Analysis
 -- ============================================================
 
 -- Q: Which companies laid off the most employees? (Top 10)
@@ -577,11 +641,11 @@ SELECT TOP 10
     industry,
     country,
     SUM(total_laid_off) AS total_laid_off,
-    COUNT(*)            AS num_rounds       -- number of times company appears in dataset
+    COUNT(*)            AS num_rounds    
 FROM   layoff_staging1
 WHERE  total_laid_off IS NOT NULL
 GROUP BY company, industry, country
-ORDER BY total_laid_off DESC;
+ORDER BY SUM(total_laid_off) DESC;
 
 
 -- Q: Which companies shut down completely? (100% laid off)
@@ -590,7 +654,7 @@ SELECT
     company,
     industry,
     country,
-    funds_raised_millions,
+    funds_raised_millions, 
     [date]
 FROM   layoff_staging1
 WHERE  percentage_laid_off = 1
@@ -617,39 +681,44 @@ ORDER BY total_laid_off DESC;
 -- Q: Top 5 companies per year by layoffs
 WITH ranked AS (
     SELECT
-        YEAR([date])        AS [year],
+        YEAR([date])                        AS [year],
         company,
         industry,
-        SUM(total_laid_off) AS total_laid_off,
+        SUM(total_laid_off)                 AS total_laid_off,
         RANK() OVER (
             PARTITION BY YEAR([date])
             ORDER BY SUM(total_laid_off) DESC
-        ) AS rnk
+        )                                   AS rnk
     FROM   layoff_staging1
-    WHERE  [date]          IS NOT NULL
-      AND  total_laid_off  IS NOT NULL
+    WHERE  [date]         IS NOT NULL
+      AND  total_laid_off IS NOT NULL
     GROUP BY YEAR([date]), company, industry
 )
-SELECT *
+SELECT
+    [year],
+    rnk,
+    company,
+    industry,
+    total_laid_off
 FROM   ranked
 WHERE  rnk <= 5
 ORDER BY [year], rnk;
 
 
 -- ============================================================
--- SECTION 8 — Geographic Analysis
+-- SECTION 9 — Geographic Analysis
 -- ============================================================
 
 -- Q: Which country was most affected?
 SELECT
     country,
-    COUNT(DISTINCT company) AS num_companies,
-    SUM(total_laid_off)     AS total_laid_off,
-    AVG(total_laid_off)     AS avg_laid_off
+    COUNT(DISTINCT company)   AS num_companies,
+    SUM(total_laid_off)AS total_laid_off,
+    AVG(total_laid_off) AS avg_laid_off
 FROM   layoff_staging1
 WHERE  total_laid_off IS NOT NULL
 GROUP BY country
-ORDER BY total_laid_off DESC;
+ORDER BY SUM(total_laid_off) DESC;
 
 
 -- Q: City-level breakdown within each country
@@ -657,35 +726,37 @@ ORDER BY total_laid_off DESC;
 WITH country_details AS (
     SELECT
         country,
-        [location]                                                              AS city,
-        COUNT(DISTINCT company)                                                 AS num_companies,
-        SUM(total_laid_off)                                                     AS total_laid_off,
-        ROUND(AVG(CAST(total_laid_off AS FLOAT)), 0)                            AS avg_laid_off,
-        ROUND(SUM(funds_raised_millions),  2)                                   AS total_funds_raised,
-        ROUND(AVG(funds_raised_millions),  2)                                   AS avg_funds_raised,
+        [location]                                                          AS city,
+        COUNT(DISTINCT company)                                             AS num_companies,
+        SUM(total_laid_off)                                                 AS total_laid_off,
+        ROUND(AVG(total_laid_off),2)                                        AS avg_laid_off,
+        ROUND(AVG(funds_raised_millions),2)                                 AS avg_funds_raised,
         -- estimated headcount per city = SUM(laid_off / layoff_rate)
-        SUM(CAST(total_laid_off AS FLOAT) / NULLIF(percentage_laid_off, 0))     AS estimated_total_employees
+        SUM(total_laid_off / NULLIF(percentage_laid_off, 0)) AS estimated_total_employees
     FROM layoff_staging1
     WHERE total_laid_off        IS NOT NULL
       AND funds_raised_millions IS NOT NULL
       AND percentage_laid_off   IS NOT NULL
-      AND percentage_laid_off   > 0
+      AND percentage_laid_off   >  0
     GROUP BY country, [location]
 ),
-ranked_country_cte AS (
+ranked_city AS (
     SELECT
         country,
         city,
         num_companies,
         total_laid_off,
         avg_laid_off,
-        total_funds_raised,
         avg_funds_raised,
-        CONCAT(
-            ROUND(total_laid_off * 100.0 / NULLIF(estimated_total_employees, 0), 2)
-        , '%')                                                                  AS layoff_rate,
-        -- rank cities within each country from most to least layoffs
-        ROW_NUMBER() OVER (PARTITION BY country ORDER BY total_laid_off DESC)   AS city_rank
+        CAST(
+            total_laid_off * 100.0
+            / NULLIF(estimated_total_employees, 0)
+            AS DECIMAL(10,2)
+        )AS layoff_rate_raw,
+        ROW_NUMBER() OVER (
+            PARTITION BY country
+            ORDER BY total_laid_off DESC
+        )                                                       AS city_rank
     FROM country_details
 )
 SELECT
@@ -696,13 +767,13 @@ SELECT
     total_laid_off,
     avg_laid_off,
     avg_funds_raised,
-    layoff_rate
-FROM   ranked_country_cte
+    layoff_rate_raw
+FROM   ranked_city
 ORDER BY country, city_rank;
 
 
 -- ============================================================
--- SECTION 9 — Correlation Analysis
+-- SECTION 10 — Correlation Analysis
 -- ============================================================
 
 /*
@@ -735,6 +806,7 @@ SELECT
 FROM layoff_staging1
 WHERE total_laid_off        IS NOT NULL
   AND funds_raised_millions IS NOT NULL;
+
 ```
 **5. Data analysis:**
 ```
