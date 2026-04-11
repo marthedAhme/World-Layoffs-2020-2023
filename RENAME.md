@@ -812,18 +812,15 @@ WHERE total_laid_off        IS NOT NULL
 ```
 https://app.powerbi.com/groups/me/reports/4bb38fe4-b957-4c95-8de8-dabe7740a702/99789b412aaa08ba6e01?experience=power-bi
 ```
-**6. Data analysis:**
-
-**7. Lay off map:**
+**6. Lay off map:**
 ```
 file:///C:/SQL_DB/Projects/Data_Analysis/Projects/Layoff_world/Data_Visualization/layoffs_geography.html
 ```
--- script/data_analysis.sql
+**7. Data analysis:**
 ```
 ```
 **8. Open the dashboard:**
 ```
----
 ```
 
 ## 👤 Author
