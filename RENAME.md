@@ -808,11 +808,15 @@ WHERE total_laid_off        IS NOT NULL
   AND funds_raised_millions IS NOT NULL;
 
 ```
-**5. Data analysis:**
+**5. Exploration dashboard:**
+```
+https://app.powerbi.com/groups/me/reports/4bb38fe4-b957-4c95-8de8-dabe7740a702/99789b412aaa08ba6e01?experience=power-bi
+```
+**6. Data analysis:**
 ```
 -- script/data_analysis.sql
 ```
-**6. Open the dashboard:**
+**7. Open the dashboard:**
 ```
 ```
 
