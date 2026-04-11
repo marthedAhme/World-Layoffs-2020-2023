@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Layoffs — Geography</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #2a2a3a;
+    --pink-dark: #4A0020;
+    --pink-mid: #C93070;
+    --pink-light: #FEF0FA;
+    --text: #f0e8f0;
+    --muted: #888899;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    padding: 24px 32px 16px;
+    border-bottom: 0.5px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    color: var(--pink-light);
+    letter-spacing: -0.5px;
+  }
+
+  header span {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: .06em;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    height: calc(100vh - 72px);
+  }
+
+  .map-area {
+    position: relative;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  #world-map {
+    width: 100%;
+    height: 100%;
+  }
+
+  .country-path {
+    fill: #1a1a28;
+    stroke: #2a2a3a;
+    stroke-width: 0.5;
+    cursor: pointer;
+    transition: fill 0.2s;
+  }
+
+  .country-path:hover {
+    stroke: #C93070;
+    stroke-width: 1;
+  }
+
+  .country-path.has-data {
+    fill: #2a1020;
+  }
+
+  .country-path.selected {
+    stroke: #FEF0FA;
+    stroke-width: 1.5;
+  }
+
+  .city-bubble {
+    fill: #C93070;
+    fill-opacity: 0.75;
+    stroke: #FEF0FA;
+    stroke-width: 0.5;
+    cursor: pointer;
+    transition: fill-opacity 0.2s, r 0.3s;
+  }
+
+  .city-bubble:hover {
+    fill-opacity: 1;
+    stroke-width: 1.5;
+  }
+
+  .city-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    fill: #FEF0FA;
+    fill-opacity: 0.8;
+    pointer-events: none;
+    text-anchor: middle;
+  }
+
+  .sidebar {
+    background: var(--surface);
+    border-left: 0.5px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 20px 24px 16px;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .country-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    color: var(--pink-light);
+    margin-bottom: 4px;
+  }
+
+  .country-total {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .country-total strong {
+    color: #C93070;
+    font-size: 14px;
+  }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 16px 24px;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .kpi {
+    background: #0a0a0f;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+
+  .kpi-label {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .kpi-val {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--pink-light);
+  }
+
+  .cities-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 24px;
+  }
+
+  .cities-list::-webkit-scrollbar { width: 4px; }
+  .cities-list::-webkit-scrollbar-track { background: transparent; }
+  .cities-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .cities-label {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .city-row {
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+
+  .city-row:hover .city-bar-fill { filter: brightness(1.2); }
+
+  .city-row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+
+  .city-row-name {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .city-row-val {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .city-bar-track {
+    height: 6px;
+    background: #1a1a28;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .city-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .city-row-sub {
+    display: flex;
+    gap: 12px;
+    margin-top: 3px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .hint {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: .04em;
+  }
+
+  .legend {
+    position: absolute;
+    bottom: 20px;
+    right: 400px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .legend-bar {
+    width: 120px;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, #2a1020, #4A0020, #C93070, #FEF0FA);
+  }
+
+  .tooltip {
+    position: absolute;
+    background: #12121a;
+    border: 0.5px solid #C93070;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+    max-width: 180px;
+  }
+
+  .tooltip.visible { opacity: 1; }
+  .tooltip-city { font-weight: 500; color: var(--pink-light); margin-bottom: 4px; }
+  .tooltip-row { color: var(--muted); margin-bottom: 2px; }
+  .tooltip-row span { color: var(--text); }
+
+  .no-selection {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+    gap: 8px;
+    padding: 40px;
+  }
+
+  .no-selection-icon {
+    font-size: 32px;
+    opacity: 0.3;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>World Layoffs 2020–2023</h1>
+  <span>Geographic distribution · 51 countries · click a country to explore cities</span>
+</header>
+
+<div class="layout">
+  <div class="map-area">
+    <svg id="world-map"></svg>
+    <div class="hint">Click any highlighted country to explore its cities</div>
+    <div class="legend">
+      <span>Low</span>
+      <div class="legend-bar"></div>
+      <span>High layoffs</span>
+    </div>
+    <div class="tooltip" id="tooltip">
+      <div class="tooltip-city" id="tt-city"></div>
+      <div class="tooltip-row">Laid off: <span id="tt-laid"></span></div>
+      <div class="tooltip-row">Rate: <span id="tt-rate"></span></div>
+      <div class="tooltip-row">Companies: <span id="tt-cos"></span></div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div id="sidebar-content">
+      <div class="no-selection">
+        <div class="no-selection-icon">◎</div>
+        <div>Select a country on the map</div>
+        <div style="font-size:10px;opacity:.6;">Bubbles show cities — size = layoffs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const geoData = {
+  "Argentina": [{city:"Buenos Aires",num_companies:3,total_laid_off:233,layoff_rate_raw:10.55,lat:-34.61,lng:-58.38}],
+  "Australia": [
+    {city:"Sydney",num_companies:10,total_laid_off:1078,layoff_rate_raw:9.27,lat:-33.87,lng:151.21},
+    {city:"Melbourne",num_companies:6,total_laid_off:369,layoff_rate_raw:29.99,lat:-37.81,lng:144.96}
+  ],
+  "Austria": [{city:"Vienna",num_companies:1,total_laid_off:270,layoff_rate_raw:27.00,lat:48.21,lng:16.37}],
+  "Brazil": [
+    {city:"Sao Paulo",num_companies:28,total_laid_off:5660,layoff_rate_raw:10.75,lat:-23.55,lng:-46.63},
+    {city:"Curitiba",num_companies:2,total_laid_off:462,layoff_rate_raw:10.32,lat:-25.43,lng:-49.27},
+    {city:"Belo Horizonte",num_companies:2,total_laid_off:327,layoff_rate_raw:13.67,lat:-19.92,lng:-43.94},
+    {city:"Joinville",num_companies:2,total_laid_off:191,layoff_rate_raw:36.21,lat:-26.30,lng:-48.85}
+  ],
+  "Canada": [
+    {city:"Toronto",num_companies:30,total_laid_off:1643,layoff_rate_raw:16.11,lat:43.65,lng:-79.38},
+    {city:"Vancouver",num_companies:8,total_laid_off:945,layoff_rate_raw:16.30,lat:49.25,lng:-123.12},
+    {city:"Montreal",num_companies:8,total_laid_off:910,layoff_rate_raw:16.72,lat:45.50,lng:-73.57},
+    {city:"Ottawa",num_companies:1,total_laid_off:1000,layoff_rate_raw:10.00,lat:45.42,lng:-75.69}
+  ],
+  "China": [
+    {city:"Beijing",num_companies:1,total_laid_off:575,layoff_rate_raw:24.21,lat:39.90,lng:116.41},
+    {city:"Shanghai",num_companies:1,total_laid_off:180,layoff_rate_raw:9.00,lat:31.23,lng:121.47}
+  ],
+  "Denmark": [{city:"Copenhagen",num_companies:2,total_laid_off:185,layoff_rate_raw:74.00,lat:55.68,lng:12.57}],
+  "France": [{city:"Paris",num_companies:3,total_laid_off:643,layoff_rate_raw:26.62,lat:48.86,lng:2.35}],
+  "Germany": [
+    {city:"Walldorf",num_companies:1,total_laid_off:3000,layoff_rate_raw:3.00,lat:49.30,lng:8.65},
+    {city:"Berlin",num_companies:25,total_laid_off:2869,layoff_rate_raw:17.31,lat:52.52,lng:13.40},
+    {city:"Frankfurt",num_companies:1,total_laid_off:200,layoff_rate_raw:4.00,lat:50.11,lng:8.68},
+    {city:"Munich",num_companies:2,total_laid_off:120,layoff_rate_raw:20.00,lat:48.14,lng:11.58}
+  ],
+  "India": [
+    {city:"Bengaluru",num_companies:29,total_laid_off:14039,layoff_rate_raw:9.67,lat:12.97,lng:77.59},
+    {city:"Gurugram",num_companies:9,total_laid_off:3776,layoff_rate_raw:15.30,lat:28.46,lng:77.03},
+    {city:"New Delhi",num_companies:7,total_laid_off:900,layoff_rate_raw:15.83,lat:28.61,lng:77.21},
+    {city:"Mumbai",num_companies:7,total_laid_off:745,layoff_rate_raw:14.63,lat:19.08,lng:72.88},
+    {city:"Ahmedabad",num_companies:1,total_laid_off:500,layoff_rate_raw:50.00,lat:23.03,lng:72.59}
+  ],
+  "Indonesia": [{city:"Jakarta",num_companies:8,total_laid_off:2721,layoff_rate_raw:11.41,lat:-6.21,lng:106.85}],
+  "Ireland": [{city:"Dublin",num_companies:3,total_laid_off:236,layoff_rate_raw:26.22,lat:53.33,lng:-6.25}],
+  "Israel": [{city:"Tel Aviv",num_companies:32,total_laid_off:2215,layoff_rate_raw:12.92,lat:32.08,lng:34.78}],
+  "Kenya": [{city:"Nairobi",num_companies:3,total_laid_off:349,layoff_rate_raw:16.05,lat:-1.29,lng:36.82}],
+  "Netherlands": [{city:"Amsterdam",num_companies:1,total_laid_off:225,layoff_rate_raw:25.00,lat:52.37,lng:4.90}],
+  "Nigeria": [{city:"Lagos",num_companies:4,total_laid_off:970,layoff_rate_raw:18.10,lat:6.52,lng:3.38}],
+  "Russia": [{city:"Moscow",num_companies:1,total_laid_off:400,layoff_rate_raw:40.00,lat:55.75,lng:37.62}],
+  "Singapore": [{city:"Singapore",num_companies:15,total_laid_off:3795,layoff_rate_raw:13.34,lat:1.35,lng:103.82}],
+  "Sweden": [
+    {city:"Stockholm",num_companies:6,total_laid_off:10370,layoff_rate_raw:8.06,lat:59.33,lng:18.07},
+    {city:"Gothenburg",num_companies:1,total_laid_off:72,layoff_rate_raw:33.00,lat:57.71,lng:11.97}
+  ],
+  "United Arab Emirates": [{city:"Dubai",num_companies:4,total_laid_off:995,layoff_rate_raw:27.19,lat:25.20,lng:55.27}],
+  "United Kingdom": [
+    {city:"London",num_companies:27,total_laid_off:5005,layoff_rate_raw:18.74,lat:51.51,lng:-0.13},
+    {city:"Edinburgh",num_companies:1,total_laid_off:300,layoff_rate_raw:20.00,lat:55.95,lng:-3.19}
+  ],
+  "United States": [
+    {city:"SF Bay Area",num_companies:248,total_laid_off:109168,layoff_rate_raw:9.18,lat:37.77,lng:-122.42},
+    {city:"Seattle",num_companies:28,total_laid_off:33936,layoff_rate_raw:3.47,lat:47.61,lng:-122.33},
+    {city:"New York City",num_companies:108,total_laid_off:21727,layoff_rate_raw:15.38,lat:40.71,lng:-74.01},
+    {city:"Boston",num_companies:43,total_laid_off:8983,layoff_rate_raw:12.13,lat:42.36,lng:-71.06},
+    {city:"Chicago",num_companies:20,total_laid_off:5530,layoff_rate_raw:16.49,lat:41.88,lng:-87.63},
+    {city:"Los Angeles",num_companies:36,total_laid_off:5034,layoff_rate_raw:17.37,lat:34.05,lng:-118.24},
+    {city:"Phoenix",num_companies:3,total_laid_off:4625,layoff_rate_raw:9.81,lat:33.45,lng:-112.07},
+    {city:"Miami",num_companies:4,total_laid_off:1877,layoff_rate_raw:10.26,lat:25.77,lng:-80.19},
+    {city:"Atlanta",num_companies:6,total_laid_off:1665,layoff_rate_raw:16.20,lat:33.75,lng:-84.39},
+    {city:"Austin",num_companies:12,total_laid_off:939,layoff_rate_raw:15.81,lat:30.27,lng:-97.74}
+  ]
+};
+
+const countryTotals = {};
+Object.entries(geoData).forEach(([country, cities]) => {
+  countryTotals[country] = cities.reduce((s, c) => s + c.total_laid_off, 0);
+});
+
+const maxTotal = Math.max(...Object.values(countryTotals));
+const maxCityLayoffs = Math.max(...Object.values(geoData).flat().map(c => c.total_laid_off));
+
+function pinkColor(val, max) {
+  const t = Math.pow(val / max, 0.4);
+  const r = Math.round(42 + (254 - 42) * (1 - t));
+  const g = Math.round(0 + (240 - 0) * (1 - t));
+  const b = Math.round(32 + (250 - 32) * (1 - t));
+  return `rgb(${r},${g},${b})`;
+}
+
+const svg = d3.select('#world-map');
+const width = document.querySelector('.map-area').offsetWidth;
+const height = document.querySelector('.map-area').offsetHeight;
+svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+const projection = d3.geoNaturalEarth1()
+  .scale(width / 6.5)
+  .translate([width / 2, height / 2]);
+
+const path = d3.geoPath(projection);
+let selectedCountry = null;
+const tooltip = document.getElementById('tooltip');
+
+const countryNameMap = {
+  "United States of America": "United States",
+  "United Kingdom": "United Kingdom",
+  "United Arab Emirates": "United Arab Emirates",
+  "Russian Federation": "Russia",
+  "Republic of Korea": "South Korea",
+  "Iran (Islamic Republic of)": "Iran"
+};
+
+d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(world => {
+  const countries = topojson.feature(world, world.objects.countries);
+
+  svg.selectAll('.country-path')
+    .data(countries.features)
+    .join('path')
+    .attr('class', d => {
+      const name = countryNameMap[d.properties.name] || d.properties.name;
+      return `country-path${geoData[name] ? ' has-data' : ''}`;
+    })
+    .attr('d', path)
+    .attr('fill', d => {
+      const name = countryNameMap[d.properties.name] || d.properties.name;
+      if (!geoData[name]) return '#1a1a28';
+      const t = Math.pow(countryTotals[name] / maxTotal, 0.4);
+      return `rgba(${Math.round(74 + (42-74)*t)},${Math.round(0)},${Math.round(32)},${0.3 + t * 0.7})`;
+    })
+    .on('click', function(event, d) {
+      const name = countryNameMap[d.properties.name] || d.properties.name;
+      if (!geoData[name]) return;
+      svg.selectAll('.country-path').classed('selected', false);
+      d3.select(this).classed('selected', true);
+      selectedCountry = name;
+      showCities(name);
+      updateSidebar(name);
+    });
+
+  svg.selectAll('.graticule').remove();
+});
+
+function showCities(country) {
+  svg.selectAll('.city-bubble, .city-label').remove();
+  if (!country || !geoData[country]) return;
+
+  const cities = geoData[country];
+  const maxR = 28;
+  const minR = 4;
+  const localMax = Math.max(...cities.map(c => c.total_laid_off));
+  const rScale = d3.scaleSqrt().domain([0, localMax]).range([minR, maxR]);
+
+  cities.forEach(city => {
+    const [x, y] = projection([city.lng, city.lat]);
+    if (!x || !y) return;
+
+    const t = city.total_laid_off / maxCityLayoffs;
+    const r = Math.round(201 - (201 - 74) * t);
+    const g = Math.round(48 - 48 * t);
+    const b = Math.round(112 - (112 - 32) * t);
+
+    svg.append('circle')
+      .attr('class', 'city-bubble')
+      .attr('cx', x).attr('cy', y)
+      .attr('r', 0)
+      .attr('fill', `rgb(${r},${g},${b})`)
+      .attr('stroke', '#FEF0FA')
+      .attr('stroke-width', 0.5)
+      .attr('fill-opacity', 0.8)
+      .style('cursor', 'pointer')
+      .transition().duration(400).ease(d3.easeBounceOut)
+      .attr('r', rScale(city.total_laid_off));
+
+    svg.append('circle')
+      .attr('class', 'city-bubble')
+      .attr('cx', x).attr('cy', y)
+      .attr('r', rScale(city.total_laid_off))
+      .attr('fill', 'transparent')
+      .attr('stroke', 'none')
+      .style('cursor', 'pointer')
+      .on('mousemove', function(event) {
+        document.getElementById('tt-city').textContent = city.city;
+        document.getElementById('tt-laid').textContent = city.total_laid_off.toLocaleString();
+        document.getElementById('tt-rate').textContent = city.layoff_rate_raw + '%';
+        document.getElementById('tt-cos').textContent = city.num_companies;
+        tooltip.style.left = (event.offsetX + 12) + 'px';
+        tooltip.style.top = (event.offsetY - 10) + 'px';
+        tooltip.classList.add('visible');
+      })
+      .on('mouseleave', () => tooltip.classList.remove('visible'));
+
+    if (rScale(city.total_laid_off) > 8) {
+      svg.append('text')
+        .attr('class', 'city-label')
+        .attr('x', x).attr('y', y - rScale(city.total_laid_off) - 3)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 9)
+        .attr('fill', '#FEF0FA')
+        .attr('fill-opacity', 0.7)
+        .text(city.city);
+    }
+  });
+}
+
+function updateSidebar(country) {
+  const cities = geoData[country];
+  const total = countryTotals[country];
+  const maxCity = Math.max(...cities.map(c => c.total_laid_off));
+  const totalCos = cities.reduce((s, c) => s + c.num_companies, 0);
+  const avgRate = (cities.reduce((s, c) => s + c.layoff_rate_raw, 0) / cities.length).toFixed(1);
+
+  document.getElementById('sidebar-content').innerHTML = `
+    <div class="sidebar-header">
+      <div class="country-name">${country}</div>
+      <div class="country-total">Total: <strong>${total.toLocaleString()}</strong> laid off across ${cities.length} ${cities.length === 1 ? 'city' : 'cities'}</div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">Companies</div>
+        <div class="kpi-val">${totalCos.toLocaleString()}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Avg rate</div>
+        <div class="kpi-val">${avgRate}%</div>
+      </div>
+    </div>
+    <div class="cities-list">
+      <div class="cities-label">Cities — ranked by layoffs</div>
+      ${cities.sort((a,b) => b.total_laid_off - a.total_laid_off).map(c => {
+        const pct = Math.round(c.total_laid_off / maxCity * 100);
+        const t = c.total_laid_off / maxCity;
+        const r = Math.round(201 - (201-74)*t);
+        const g = Math.round(48 - 48*t);
+        const b = Math.round(112 - (112-32)*t);
+        return `
+        <div class="city-row">
+          <div class="city-row-header">
+            <span class="city-row-name">${c.city}</span>
+            <span class="city-row-val">${c.total_laid_off.toLocaleString()}</span>
+          </div>
+          <div class="city-bar-track">
+            <div class="city-bar-fill" style="width:${pct}%;background:rgb(${r},${g},${b});"></div>
+          </div>
+          <div class="city-row-sub">
+            <span>${c.num_companies} cos</span>
+            <span>${c.layoff_rate_raw}% rate</span>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+</script>
+</body>
+</html>
