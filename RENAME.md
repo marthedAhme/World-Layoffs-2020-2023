@@ -814,9 +814,7 @@ WHERE total_laid_off        IS NOT NULL
 ```
 **6. Open the dashboard:**
 ```
-- Open dashboard/layoffs_dashboard.pbix in Power BI Desktop
-- Update the data source connection to your SQL Server instance
-- Refresh the data
+![Chart](https://app.powerbi.com/groups/me/reports/4bb38fe4-b957-4c95-8de8-dabe7740a702/99789b412aaa08ba6e01?experience=power-bi)
 ```
 
 ---
