@@ -817,7 +817,8 @@ https://app.powerbi.com/groups/me/reports/4bb38fe4-b957-4c95-8de8-dabe7740a702/9
 file:///C:/SQL_DB/Projects/Data_Analysis/Projects/Layoff_world/Data_Visualization/layoffs_geography.html
 ```
 **7. Data analysis:**
-```
+```sql
+
 -- ============================================================
 --  World Layoffs 2020–2023
 --  Advanced EDA — Professional Edition
